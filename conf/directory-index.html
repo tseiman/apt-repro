@@ -3,49 +3,195 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>$title</title>
+  <meta name="theme-color" content="#121c29">
+  <title>$title · apt-repro</title>
   <style>
     :root {
-      color-scheme: light dark;
-      font-family: Inter, system-ui, sans-serif;
+      color-scheme: dark;
+      --background: #121c29;
+      --panel: #172535;
+      --line: #36485c;
+      --text: #f1f5fa;
+      --muted: #acbac9;
+      --accent: #c4fc83;
+      font-family: "Geist", system-ui, sans-serif;
     }
+    * { box-sizing: border-box; }
     body {
       margin: 0;
-      background: Canvas;
-      color: CanvasText;
+      background: radial-gradient(ellipse at 80% 0%, #203b46, transparent 50%) var(--background);
+      color: var(--text);
     }
-    main {
-      max-width: 52rem;
-      margin: 0 auto;
-      padding: 2.5rem 1rem;
+    a { color: inherit; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+    .frame { width: min(68rem, 100% - 3rem); margin-inline: auto; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-block: 1.25rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: .75rem; font-weight: 650; }
+    .mark {
+      display: grid;
+      place-items: center;
+      width: 2.25rem;
+      height: 2.25rem;
+      background: var(--accent);
+      color: var(--background);
+      border-radius: .55rem;
+      font: 700 1.05rem ui-monospace, monospace;
+    }
+    .quiet { color: var(--muted); text-underline-offset: .25em; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 2.5rem;
+      padding-block: clamp(2.75rem, 8vw, 6rem);
     }
     h1 {
-      margin: 0 0 1.25rem;
-      font-size: clamp(1.4rem, 4vw, 2rem);
+      max-width: 11ch;
+      margin: 0;
+      font-size: clamp(2.8rem, 7vw, 6.25rem);
+      line-height: .98;
+      letter-spacing: -.075em;
+    }
+    h1 span { color: var(--accent); }
+    .hero p { margin: 1.15rem 0 0; color: var(--muted); line-height: 1.6; }
+    .avatar-link {
+      display: block;
+      padding: .6rem;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      background: var(--panel);
+    }
+    .avatar {
+      display: block;
+      width: clamp(6rem, 17vw, 11rem);
+      height: auto;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 50%;
+      background: var(--line);
+    }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .85rem; }
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: .4rem;
+      padding: 1.25rem;
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: .8rem;
+      background: var(--panel);
+    }
+    .card:hover { border-color: var(--accent); }
+    .card-title { display: flex; justify-content: space-between; gap: .75rem; font-weight: 650; }
+    .card-title span { color: var(--accent); }
+    .card code { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+    .distributions { margin-block: 2.75rem 4rem; }
+    h2 { margin: 0 0 .75rem; font-size: 1rem; }
+    .distributions ul { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+    .distributions a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .85rem .2rem;
+      border-bottom: 1px solid var(--line);
+      text-decoration: none;
+    }
+    .distributions a:hover { color: var(--accent); }
+    .distributions code { color: var(--muted); }
+    @media (max-width: 36rem) {
+      .frame { width: calc(100% - 2rem); }
+      .hero { grid-template-columns: 1fr; gap: 1.25rem; }
+      .avatar-link { justify-self: start; grid-row: 1; }
+      .cards { grid-template-columns: 1fr; }
+    }
+    .directory-list { display: none; }
+    .directory-list h1 {
+      max-width: none;
+      margin-block: 2.75rem 1rem;
+      font-size: clamp(1.6rem, 4vw, 2.75rem);
+      letter-spacing: -.045em;
+      line-height: 1.15;
       overflow-wrap: anywhere;
     }
-    ul {
-      margin: 0;
+    .directory-list ul {
+      margin: 0 0 4rem;
       padding: 0;
       list-style: none;
-      border-block-start: 1px solid GrayText;
+      border-top: 1px solid var(--line);
     }
-    li {
-      border-block-end: 1px solid GrayText;
-    }
-    li a {
+    .directory-list li { border-bottom: 1px solid var(--line); }
+    .directory-list a {
       display: block;
-      padding: .65rem .5rem;
+      padding: .85rem .2rem;
       overflow-wrap: anywhere;
+      text-decoration: none;
     }
+    .directory-list a:hover { color: var(--accent); }
+    body:not([data-directory="APT repository"]) .archive-home { display: none; }
+    body:not([data-directory="APT repository"]) .directory-list { display: block; }
+    body[data-directory="APT repository"] .directory-list li:has(> a:is([href="pool/"], [href="dists/"], [href="apt-repo.asc"])) {
+      display: none;
+    }
+    body[data-directory="APT repository"] .directory-list:has(li:not(:has(> a:is([href="pool/"], [href="dists/"], [href="apt-repo.asc"])))) {
+      display: block;
+    }
+    body[data-directory="APT repository"] .directory-list h1 { display: none; }
   </style>
 </head>
-<body>
-  <main>
-    <h1>$title</h1>
-    <ul>
-      $entries
-    </ul>
-  </main>
+<body data-directory="$title">
+  <div class="frame">
+    <header>
+      <span class="brand"><span class="mark" aria-hidden="true">#_</span> apt-repro</span>
+      <a class="quiet" href="https://github.com/tseiman/apt-repro">View on GitHub</a>
+    </header>
+    <main>
+      <div class="archive-home">
+        <section class="hero" aria-labelledby="archive-title">
+          <div>
+            <h1 id="archive-title">Tseiman <span>Debian Archive</span></h1>
+            <p>Browse packages, distribution indexes, and the public signing key.</p>
+          </div>
+          <a class="avatar-link" href="https://github.com/tseiman" aria-label="Tseiman on GitHub">
+            <img class="avatar" src="https://avatars.githubusercontent.com/u/1983678?v=4" width="176" height="176" alt="">
+          </a>
+        </section>
+        <nav class="cards" aria-label="Archive files">
+          <a class="card" href="https://tseiman.github.io/apt-repro/pool/">
+            <span class="card-title">Packages <span aria-hidden="true">↗</span></span>
+            <code>pool/</code>
+          </a>
+          <a class="card" href="https://tseiman.github.io/apt-repro/dists/">
+            <span class="card-title">Distribution indexes <span aria-hidden="true">↗</span></span>
+            <code>dists/</code>
+          </a>
+          <a class="card" href="https://tseiman.github.io/apt-repro/apt-repo.asc">
+            <span class="card-title">Public signing key <span aria-hidden="true">↗</span></span>
+            <code>apt-repo.asc</code>
+          </a>
+        </nav>
+        <section class="distributions" aria-labelledby="distributions-title">
+          <h2 id="distributions-title">Debian distributions</h2>
+          <ul>
+            <li><a href="https://tseiman.github.io/apt-repro/dists/bookworm/"><span>Debian 12</span><code>bookworm →</code></a></li>
+            <li><a href="https://tseiman.github.io/apt-repro/dists/trixie/"><span>Debian 13</span><code>trixie →</code></a></li>
+          </ul>
+        </section>
+      </div>
+      <section class="directory-list" aria-labelledby="directory-title">
+        <h1 id="directory-title">$title</h1>
+        <ul>
+          $entries
+        </ul>
+      </section>
+    </main>
+  </div>
 </body>
 </html>
