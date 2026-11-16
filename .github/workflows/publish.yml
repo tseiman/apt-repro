@@ -1,0 +1,103 @@
+name: Publish APT-Archiv
+
+on:
+  workflow_dispatch:
+    inputs:
+      deb_url:
+        description: Direct HTTPS-Download-URL of the .deb-file
+        required: true
+        type: string
+      distribution:
+        description: Packet target
+        required: true
+        type: choice
+        options:
+          - bookworm
+          - trixie
+          - beide
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: reprepro install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y reprepro gnupg
+
+      - name: Download test packaet
+        env:
+          DEB_URL: ${{ inputs.deb_url }}
+        run: |
+          mkdir -p incoming
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output incoming/test.deb -- "$DEB_URL"
+          dpkg-deb --show incoming/test.deb
+
+      - name: APT-Archiv erzeugen und signieren
+        env:
+          APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+          DISTRIBUTION: ${{ inputs.distribution }}
+        shell: bash
+        run: |
+          : "${APT_GPG_PRIVATE_KEY:?Repository-Secret APT_GPG_PRIVATE_KEY fehlt}"
+          export GNUPGHOME
+          GNUPGHOME="$(mktemp -d)"
+          trap 'gpgconf --kill gpg-agent; rm -r -- "$GNUPGHOME"' EXIT
+          umask 077
+          printf '%s\n' "$APT_GPG_PRIVATE_KEY" | gpg --batch --import
+          if [[ -n "$APT_GPG_PASSPHRASE" ]]; then
+            printf '%s\n' "$APT_GPG_PASSPHRASE" > "$GNUPGHOME/passphrase"
+            printf '%s\n' batch 'pinentry-mode loopback' "passphrase-file $GNUPGHOME/passphrase" > "$GNUPGHOME/gpg.conf"
+          fi
+          unset APT_GPG_PRIVATE_KEY APT_GPG_PASSPHRASE
+          umask 022
+
+          case "$DISTRIBUTION" in
+            bookworm|trixie) distributions=("$DISTRIBUTION") ;;
+            beide) distributions=(bookworm trixie) ;;
+            *) exit 1 ;;
+          esac
+
+          for distribution in "${distributions[@]}"; do
+            reprepro --export=never includedeb "$distribution" incoming/test.deb
+          done
+          reprepro export "${distributions[@]}"
+
+          gpg --batch --yes --dearmor --output "$GNUPGHOME/apt-repo.gpg" apt-repo.asc
+          for distribution in "${distributions[@]}"; do
+            gpgv --keyring "$GNUPGHOME/apt-repo.gpg" "dists/$distribution/InRelease"
+          done
+
+          mkdir -p site
+          cp -R dists pool site/
+          cp apt-repo.asc site/
+
+      - name: Pages-Artefakt hochladen
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages veröffentlichen
+        id: deployment
+        uses: actions/deploy-pages@v4
