@@ -1,14 +1,10 @@
-name: Publish APT-Archiv
+name: APT-Archiv veröffentlichen
 
 on:
   workflow_dispatch:
     inputs:
-      deb_url:
-        description: Direct HTTPS-Download-URL of the .deb-file
-        required: true
-        type: string
       distribution:
-        description: Packet target
+        description: Ziel für das Paket
         required: true
         type: choice
         options:
@@ -30,18 +26,32 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: reprepro install
+      - name: reprepro installieren
         run: |
           sudo apt-get update
           sudo apt-get install -y reprepro gnupg
 
-      - name: Download test packaet
+      - name: Release-Pakete herunterladen und Prüfsummen prüfen
         env:
-          DEB_URL: ${{ inputs.deb_url }}
+          RELEASE_URL: https://github.com/tseiman/HomeAutomationMonitorGW/releases/download/v1.1.5
+        shell: bash
         run: |
           mkdir -p incoming
-          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output incoming/test.deb -- "$DEB_URL"
-          dpkg-deb --show incoming/test.deb
+          cd incoming
+
+          for package in automation-gateway automation-gateway-led; do
+            for architecture in amd64 arm64; do
+              asset="${package}_1.1.5_${architecture}.deb"
+              curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$asset" -- "$RELEASE_URL/$asset"
+              curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$asset.sha256" -- "$RELEASE_URL/$asset.sha256"
+              expected="$(awk 'NR == 1 { sub(/\r$/, ""); print $1 }' "$asset.sha256")"
+              if [[ ! "$expected" =~ ^[[:xdigit:]]{64}$ ]]; then
+                echo "Ungültige SHA256-Prüfsumme in $asset.sha256" >&2
+                exit 1
+              fi
+              printf '%s  %s\n' "${expected,,}" "$asset" | sha256sum --check
+            done
+          done
 
       - name: APT-Archiv erzeugen und signieren
         env:
@@ -70,7 +80,9 @@ jobs:
           esac
 
           for distribution in "${distributions[@]}"; do
-            reprepro --export=never includedeb "$distribution" incoming/test.deb
+            for package_file in incoming/*.deb; do
+              reprepro --export=never includedeb "$distribution" "$package_file"
+            done
           done
           reprepro export "${distributions[@]}"
 
