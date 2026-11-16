@@ -1,0 +1,6 @@
+[
+  {
+    "repository": "tseiman/HomeAutomationMonitorGW",
+    "distributions": ["bookworm", "trixie"]
+  }
+]
