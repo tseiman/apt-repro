@@ -6,7 +6,7 @@ Central Tseiman Debian package archive.
 
 ## Use the archive
 
-The archive targets Debian 12 (`bookworm`) and Debian 13 (`trixie`) on `amd64` and `arm64`. Ubuntu compatibility has not been verified.
+The archive targets Debian 12 (`bookworm`) and Debian 13 (`trixie`). Available architectures vary by package. Ubuntu compatibility has not been verified.
 
 1. Download the public signing key and check its fingerprint.
 
@@ -34,6 +34,8 @@ The archive targets Debian 12 (`bookworm`) and Debian 13 (`trixie`) on `amd64` a
    sudo apt-get --simulate install PACKAGE_NAME
    sudo apt-get install PACKAGE_NAME
    ```
+
+   
 
    If you previously used a project-specific archive, disable its old APT source once the new one works.
 
