@@ -192,9 +192,12 @@ jobs:
           python3 - <<'PY'
           from html import escape
           from pathlib import Path
+          from string import Template
           from urllib.parse import quote
 
           root = Path("site")
+          template_path = Path("conf/directory-index.html")
+          template = Template(template_path.read_text(encoding="utf-8"))
           directories = [root, *(path for path in root.rglob("*") if path.is_dir())]
           for directory in directories:
               title = f"APT repository / {directory.relative_to(root).as_posix()}" if directory != root else "APT repository"
@@ -207,9 +210,7 @@ jobs:
                   label = escape(entry.name) + suffix
                   links.append(f'<li><a href="{href}">{label}</a></li>')
               (directory / "index.html").write_text(
-                  '<!doctype html><html lang="en"><meta charset="utf-8">'
-                  f'<title>{escape(title)}</title><h1>{escape(title)}</h1>'
-                  f'<ul>{"".join(links)}</ul></html>',
+                  template.substitute(title=escape(title), entries="\n      ".join(links)),
                   encoding="utf-8",
               )
           PY
