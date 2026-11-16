@@ -2,15 +2,8 @@ name: Publish APT repository
 
 on:
   workflow_dispatch:
-    inputs:
-      distribution:
-        description: Distributions to receive the release packages
-        required: true
-        type: choice
-        options:
-          - bookworm
-          - trixie
-          - both
+  repository_dispatch:
+    types: [apt-release-published]
 
 concurrency:
   group: github-pages
@@ -33,31 +26,59 @@ jobs:
 
       - name: Download release packages and verify checksums
         env:
-          RELEASE_URL: https://github.com/tseiman/HomeAutomationMonitorGW/releases/download/v1.1.5
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
+          jq -e 'type == "array" and length > 0 and all(.[]; (.repository | type == "string" and test("^[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$")) and (.distributions | type == "array" and length > 0 and all(.[]; type == "string" and test("^[a-z0-9][a-z0-9.-]*$"))))' conf/sources.json > /dev/null
+          mapfile -t configured_distributions < <(awk '$1 == "Codename:" { print $2 }' conf/distributions)
           mkdir -p incoming
-          cd incoming
+          shopt -s nullglob
 
-          for package in automation-gateway automation-gateway-led; do
-            for architecture in amd64 arm64; do
-              asset="${package}_1.1.5_${architecture}.deb"
-              curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$asset" -- "$RELEASE_URL/$asset"
-              curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$asset.sha256" -- "$RELEASE_URL/$asset.sha256"
-              expected="$(awk 'NR == 1 { sub(/\r$/, ""); print $1 }' "$asset.sha256")"
-              if [[ ! "$expected" =~ ^[[:xdigit:]]{64}$ ]]; then
-                echo "Invalid SHA256 checksum in $asset.sha256" >&2
+          jq -c '.[]' conf/sources.json > "$RUNNER_TEMP/apt-sources.jsonl"
+          while IFS= read -r source; do
+            repository="$(jq -r '.repository' <<< "$source")"
+            pattern="$(jq -r '.asset_pattern // "*.deb"' <<< "$source")"
+            tag="$(jq -r '.tag // ""' <<< "$source")"
+            mapfile -t targets < <(jq -r '.distributions[]' <<< "$source")
+            for target in "${targets[@]}"; do
+              if ! printf '%s\n' "${configured_distributions[@]}" | grep -Fxq -- "$target"; then
+                echo "Unknown distribution '$target' for $repository" >&2
                 exit 1
               fi
-              printf '%s  %s\n' "${expected,,}" "$asset" | sha256sum --check
             done
-          done
+
+            download_dir="$(mktemp -d "$RUNNER_TEMP/apt-source.XXXXXX")"
+            tag_args=()
+            if [[ -n "$tag" ]]; then
+              tag_args+=("$tag")
+            fi
+            gh release download --repo "$repository" --dir "$download_dir" --pattern "$pattern" --pattern "$pattern.sha256" -- "${tag_args[@]}"
+            packages=("$download_dir"/*.deb)
+            if (( ${#packages[@]} == 0 )); then
+              echo "No Debian packages found for $repository ($pattern)" >&2
+              exit 1
+            fi
+
+            for package_file in "${packages[@]}"; do
+              expected="$(awk 'NR == 1 { sub(/\r$/, ""); print $1 }' "$package_file.sha256")"
+              if [[ ! "$expected" =~ ^[[:xdigit:]]{64}$ ]]; then
+                echo "Invalid SHA256 checksum in $package_file.sha256" >&2
+                exit 1
+              fi
+              printf '%s  %s\n' "${expected,,}" "$package_file" | sha256sum --check
+            done
+
+            for target in "${targets[@]}"; do
+              mkdir -p "incoming/$target"
+              source_dir="$(mktemp -d "incoming/$target/source.XXXXXX")"
+              cp -- "${packages[@]}" "$source_dir/"
+            done
+          done < "$RUNNER_TEMP/apt-sources.jsonl"
 
       - name: Build and sign APT repository
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
-          DISTRIBUTION: ${{ inputs.distribution }}
         shell: bash
         run: |
           : "${APT_GPG_PRIVATE_KEY:?Missing repository secret APT_GPG_PRIVATE_KEY}"
@@ -73,16 +94,11 @@ jobs:
           unset APT_GPG_PRIVATE_KEY APT_GPG_PASSPHRASE
           umask 022
 
-          case "$DISTRIBUTION" in
-            bookworm|trixie) distributions=("$DISTRIBUTION") ;;
-            both) distributions=(bookworm trixie) ;;
-            *) exit 1 ;;
-          esac
-
-          for distribution in "${distributions[@]}"; do
-            for package_file in incoming/*.deb; do
-              reprepro --export=never includedeb "$distribution" "$package_file"
-            done
+          shopt -s nullglob
+          for package_file in incoming/*/*/*.deb; do
+            distribution="${package_file#incoming/}"
+            distribution="${distribution%%/*}"
+            reprepro --export=never includedeb "$distribution" "$package_file"
           done
           reprepro export
 
@@ -97,10 +113,9 @@ jobs:
           cp apt-repo.asc site/
 
       - name: Test repository with APT
-        env:
-          DISTRIBUTION: ${{ inputs.distribution }}
         shell: bash
         run: |
+          shopt -s nullglob
           archive="$PWD/site"
           for release in "$archive"/dists/*/Release; do
             distribution="$(basename "$(dirname "$release")")"
@@ -120,16 +135,18 @@ jobs:
             mkdir -p "$apt_dir/lists/partial"
             apt-get "${apt_options[@]}" --error-on=any update
 
-            if [[ "$DISTRIBUTION" == "$distribution" || ( "$DISTRIBUTION" == both && "$distribution" =~ ^(bookworm|trixie)$ ) ]]; then
-              for package_file in "$PWD"/incoming/*.deb; do
-                package="$(dpkg-deb -f "$package_file" Package)"
-                version="$(dpkg-deb -f "$package_file" Version)"
-                architecture="$(dpkg-deb -f "$package_file" Architecture)"
-                download_dir="$(mktemp -d "$apt_dir/download.XXXXXX")"
-                (cd "$download_dir" && apt-get "${apt_options[@]}" download "$package:$architecture=$version")
-                cmp "$package_file" "$download_dir"/*.deb
-              done
-            fi
+            for package_file in "$PWD"/incoming/"$distribution"/*/*.deb; do
+              package="$(dpkg-deb -f "$package_file" Package)"
+              version="$(dpkg-deb -f "$package_file" Version)"
+              architecture="$(dpkg-deb -f "$package_file" Architecture)"
+              package_spec="$package:$architecture"
+              if [[ "$architecture" == all ]]; then
+                package_spec="$package"
+              fi
+              download_dir="$(mktemp -d "$apt_dir/download.XXXXXX")"
+              (cd "$download_dir" && apt-get "${apt_options[@]}" download "$package_spec=$version")
+              cmp "$package_file" "$download_dir"/*.deb
+            done
             rm -r -- "$apt_dir"
           done
 
