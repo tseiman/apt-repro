@@ -1,2 +1,2 @@
 # apt-repro
-Central Tseiman Git Repository 
+Central Tseiman GitHub Debian Archive to be eventually registered in debian/ubuntu for apt/apt-get.
