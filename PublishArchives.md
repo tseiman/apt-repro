@@ -8,7 +8,7 @@ The central repository is `tseiman/apt-repro`. Application projects publish Debi
 
 1. Keep `conf/distributions`, `conf/sources.json`, `apt-repo.asc`, and `.github/workflows/publish.yml` on the default branch. Set **Settings → Pages → Source** to **GitHub Actions**.
 2. Add the armored private signing key as the repository Actions secret `APT_GPG_PRIVATE_KEY`. If it has a passphrase, add `APT_GPG_PASSPHRASE` as well. Commit the corresponding public key as `apt-repo.asc` and set `SignWith` in each distribution block to its full fingerprint without spaces.
-3. Define the distribution codenames, architectures, and components in `conf/distributions`. The current archive uses `bookworm` (Debian 12), `trixie` (Debian 13), `amd64`, `arm64`, and the `main` component.
+3. Define the distribution codenames, baseline architectures, and components in `conf/distributions`. The current archive uses `bookworm` (Debian 12), `trixie` (Debian 13), and the `main` component. During the build, the workflow adds any additional architectures found in the selected packages to their target distributions. An architecture index lists the packages available for that architecture, including architecture-independent packages.
 
 ## Add an application project
 
