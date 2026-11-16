@@ -1,0 +1,15 @@
+Origin: Mein APT-Archiv
+Label: Mein APT-Archiv
+Codename: bookworm
+Architectures: amd64 arm64
+Components: main
+Description: Pakete für Debian 12
+SignWith: FBB4E68DABB4A25F6E73C81DD4EA266E8BC8043F
+
+Origin: Mein APT-Archiv
+Label: Mein APT-Archiv
+Codename: trixie
+Architectures: amd64 arm64
+Components: main
+Description: Pakete für Debian 13
+SignWith: FBB4E68DABB4A25F6E73C81DD4EA266E8BC8043F
