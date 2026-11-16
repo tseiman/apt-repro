@@ -1,16 +1,16 @@
-name: APT-Archiv veröffentlichen
+name: Publish APT repository
 
 on:
   workflow_dispatch:
     inputs:
       distribution:
-        description: Ziel für das Paket
+        description: Distributions to receive the release packages
         required: true
         type: choice
         options:
           - bookworm
           - trixie
-          - beide
+          - both
 
 concurrency:
   group: github-pages
@@ -26,12 +26,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: reprepro installieren
+      - name: Install reprepro
         run: |
           sudo apt-get update
           sudo apt-get install -y reprepro gnupg
 
-      - name: Release-Pakete herunterladen und Prüfsummen prüfen
+      - name: Download release packages and verify checksums
         env:
           RELEASE_URL: https://github.com/tseiman/HomeAutomationMonitorGW/releases/download/v1.1.5
         shell: bash
@@ -46,21 +46,21 @@ jobs:
               curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$asset.sha256" -- "$RELEASE_URL/$asset.sha256"
               expected="$(awk 'NR == 1 { sub(/\r$/, ""); print $1 }' "$asset.sha256")"
               if [[ ! "$expected" =~ ^[[:xdigit:]]{64}$ ]]; then
-                echo "Ungültige SHA256-Prüfsumme in $asset.sha256" >&2
+                echo "Invalid SHA256 checksum in $asset.sha256" >&2
                 exit 1
               fi
               printf '%s  %s\n' "${expected,,}" "$asset" | sha256sum --check
             done
           done
 
-      - name: APT-Archiv erzeugen und signieren
+      - name: Build and sign APT repository
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
           APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
           DISTRIBUTION: ${{ inputs.distribution }}
         shell: bash
         run: |
-          : "${APT_GPG_PRIVATE_KEY:?Repository-Secret APT_GPG_PRIVATE_KEY fehlt}"
+          : "${APT_GPG_PRIVATE_KEY:?Missing repository secret APT_GPG_PRIVATE_KEY}"
           export GNUPGHOME
           GNUPGHOME="$(mktemp -d)"
           trap 'gpgconf --kill gpg-agent; rm -r -- "$GNUPGHOME"' EXIT
@@ -75,7 +75,7 @@ jobs:
 
           case "$DISTRIBUTION" in
             bookworm|trixie) distributions=("$DISTRIBUTION") ;;
-            beide) distributions=(bookworm trixie) ;;
+            both) distributions=(bookworm trixie) ;;
             *) exit 1 ;;
           esac
 
@@ -84,10 +84,11 @@ jobs:
               reprepro --export=never includedeb "$distribution" "$package_file"
             done
           done
-          reprepro export "${distributions[@]}"
+          reprepro export
 
           gpg --batch --yes --dearmor --output "$GNUPGHOME/apt-repo.gpg" apt-repo.asc
-          for distribution in "${distributions[@]}"; do
+          mapfile -t configured_distributions < <(awk '$1 == "Codename:" { print $2 }' conf/distributions)
+          for distribution in "${configured_distributions[@]}"; do
             gpgv --keyring "$GNUPGHOME/apt-repo.gpg" "dists/$distribution/InRelease"
           done
 
@@ -95,7 +96,44 @@ jobs:
           cp -R dists pool site/
           cp apt-repo.asc site/
 
-      - name: Verzeichnislisten für den Browser erzeugen
+      - name: Test repository with APT
+        env:
+          DISTRIBUTION: ${{ inputs.distribution }}
+        shell: bash
+        run: |
+          archive="$PWD/site"
+          for release in "$archive"/dists/*/Release; do
+            distribution="$(basename "$(dirname "$release")")"
+            components="$(sed -n 's/^Components: //p' "$release")"
+            read -ra architectures <<< "$(sed -n 's/^Architectures: //p' "$release")"
+            apt_dir="$(mktemp -d)"
+            printf 'deb [signed-by=%s/apt-repo.asc] file:%s %s %s\n' "$archive" "$archive" "$distribution" "$components" > "$apt_dir/repository.list"
+            apt_options=(
+              -o "Dir::Etc::sourcelist=$apt_dir/repository.list"
+              -o "Dir::Etc::sourceparts=-"
+              -o "Dir::State::lists=$apt_dir/lists"
+              -o "APT::Sandbox::User=$(id -un)"
+            )
+            for architecture in "${architectures[@]}"; do
+              apt_options+=(-o "APT::Architectures::=$architecture")
+            done
+            mkdir -p "$apt_dir/lists/partial"
+            apt-get "${apt_options[@]}" --error-on=any update
+
+            if [[ "$DISTRIBUTION" == "$distribution" || ( "$DISTRIBUTION" == both && "$distribution" =~ ^(bookworm|trixie)$ ) ]]; then
+              for package_file in "$PWD"/incoming/*.deb; do
+                package="$(dpkg-deb -f "$package_file" Package)"
+                version="$(dpkg-deb -f "$package_file" Version)"
+                architecture="$(dpkg-deb -f "$package_file" Architecture)"
+                download_dir="$(mktemp -d "$apt_dir/download.XXXXXX")"
+                (cd "$download_dir" && apt-get "${apt_options[@]}" download "$package:$architecture=$version")
+                cmp "$package_file" "$download_dir"/*.deb
+              done
+            fi
+            rm -r -- "$apt_dir"
+          done
+
+      - name: Generate directory listings
         run: |
           python3 - <<'PY'
           from html import escape
@@ -105,8 +143,8 @@ jobs:
           root = Path("site")
           directories = [root, *(path for path in root.rglob("*") if path.is_dir())]
           for directory in directories:
-              title = f"APT-Archiv / {directory.relative_to(root).as_posix()}" if directory != root else "APT-Archiv"
-              links = ['<li><a href="../">Zurück</a></li>'] if directory != root else []
+              title = f"APT repository / {directory.relative_to(root).as_posix()}" if directory != root else "APT repository"
+              links = ['<li><a href="../">Parent directory</a></li>'] if directory != root else []
               for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), path.name)):
                   if entry.name == "index.html":
                       continue
@@ -115,14 +153,14 @@ jobs:
                   label = escape(entry.name) + suffix
                   links.append(f'<li><a href="{href}">{label}</a></li>')
               (directory / "index.html").write_text(
-                  '<!doctype html><html lang="de"><meta charset="utf-8">'
+                  '<!doctype html><html lang="en"><meta charset="utf-8">'
                   f'<title>{escape(title)}</title><h1>{escape(title)}</h1>'
                   f'<ul>{"".join(links)}</ul></html>',
                   encoding="utf-8",
               )
           PY
 
-      - name: Pages-Artefakt hochladen
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
           path: site
@@ -137,6 +175,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Auf GitHub Pages veröffentlichen
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
