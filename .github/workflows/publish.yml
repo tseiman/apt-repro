@@ -75,6 +75,43 @@ jobs:
             done
           done < "$RUNNER_TEMP/apt-sources.jsonl"
 
+      - name: Add package architectures to the target distributions
+        run: |
+          python3 - <<'PY'
+          import re
+          import subprocess
+          from collections import defaultdict
+          from pathlib import Path
+
+          package_architectures = defaultdict(set)
+          for package in Path("incoming").glob("*/*/*.deb"):
+              distribution = package.parts[1]
+              architecture = subprocess.check_output(
+                  ["dpkg-deb", "-f", str(package), "Architecture"], text=True
+              ).strip()
+              if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", architecture):
+                  raise SystemExit(f"Invalid architecture in {package}: {architecture!r}")
+              if architecture != "all":
+                  package_architectures[distribution].add(architecture)
+
+          configuration = Path("conf/distributions")
+          blocks = re.split(r"(\n[ \t]*\n)", configuration.read_text(encoding="utf-8"))
+          for index, block in enumerate(blocks):
+              codename = re.search(r"^Codename:[ \t]*(\S+)", block, re.MULTILINE)
+              if not codename or codename[1] not in package_architectures:
+                  continue
+              field = re.search(r"^Architectures:[^\n]*(?:\n[ \t]+[^\n]+)*", block, re.MULTILINE)
+              if not field:
+                  raise SystemExit(f"Missing Architectures field for {codename[1]}")
+              configured = field[0].partition(":")[2].split()
+              added = sorted(package_architectures[codename[1]].difference(configured))
+              if added:
+                  value = "Architectures: " + " ".join([*configured, *added])
+                  blocks[index] = block[:field.start()] + value + block[field.end():]
+                  print(f"{codename[1]}: added {', '.join(added)}")
+          configuration.write_text("".join(blocks), encoding="utf-8")
+          PY
+
       - name: Build and sign APT repository
         env:
           APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
@@ -195,3 +232,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
