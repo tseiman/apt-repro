@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$title</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    body {
+      margin: 0;
+      background: Canvas;
+      color: CanvasText;
+    }
+    main {
+      max-width: 52rem;
+      margin: 0 auto;
+      padding: 2.5rem 1rem;
+    }
+    h1 {
+      margin: 0 0 1.25rem;
+      font-size: clamp(1.4rem, 4vw, 2rem);
+      overflow-wrap: anywhere;
+    }
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      border-block-start: 1px solid GrayText;
+    }
+    li {
+      border-block-end: 1px solid GrayText;
+    }
+    li a {
+      display: block;
+      padding: .65rem .5rem;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>$title</h1>
+    <ul>
+      $entries
+    </ul>
+  </main>
+</body>
+</html>
