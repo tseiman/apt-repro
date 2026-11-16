@@ -95,6 +95,33 @@ jobs:
           cp -R dists pool site/
           cp apt-repo.asc site/
 
+      - name: Verzeichnislisten für den Browser erzeugen
+        run: |
+          python3 - <<'PY'
+          from html import escape
+          from pathlib import Path
+          from urllib.parse import quote
+
+          root = Path("site")
+          directories = [root, *(path for path in root.rglob("*") if path.is_dir())]
+          for directory in directories:
+              title = f"APT-Archiv / {directory.relative_to(root).as_posix()}" if directory != root else "APT-Archiv"
+              links = ['<li><a href="../">Zurück</a></li>'] if directory != root else []
+              for entry in sorted(directory.iterdir(), key=lambda path: (not path.is_dir(), path.name)):
+                  if entry.name == "index.html":
+                      continue
+                  suffix = "/" if entry.is_dir() else ""
+                  href = quote(entry.name) + suffix
+                  label = escape(entry.name) + suffix
+                  links.append(f'<li><a href="{href}">{label}</a></li>')
+              (directory / "index.html").write_text(
+                  '<!doctype html><html lang="de"><meta charset="utf-8">'
+                  f'<title>{escape(title)}</title><h1>{escape(title)}</h1>'
+                  f'<ul>{"".join(links)}</ul></html>',
+                  encoding="utf-8",
+              )
+          PY
+
       - name: Pages-Artefakt hochladen
         uses: actions/upload-pages-artifact@v4
         with:
