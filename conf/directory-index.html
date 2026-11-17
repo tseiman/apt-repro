@@ -34,6 +34,7 @@
       border-bottom: 1px solid var(--line);
     }
     .brand { display: flex; align-items: center; gap: .75rem; font-weight: 650; }
+    .brand, .brand:visited { color: inherit; text-decoration: none; }
     .mark {
       display: grid;
       place-items: center;
@@ -149,7 +150,7 @@
 <body data-directory="$title">
   <div class="frame">
     <header>
-      <span class="brand"><span class="mark" aria-hidden="true">#_</span> apt-repro</span>
+      <a class="brand" href="/apt-repro/"><span class="mark" aria-hidden="true">#_</span> apt-repro</a>
       <a class="quiet" href="https://github.com/tseiman/apt-repro">View on GitHub</a>
     </header>
     <main>
